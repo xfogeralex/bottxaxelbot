@@ -267,5 +267,15 @@ def start(message):
         "- CAPTCHA emoji dla nowych użytkowników\n"
         "- logi do kanału adminów."
     )
+from admin_panel import register_admin_panel
+
+register_admin_panel(
+    bot,
+    LOG_CHANNEL_ID,
+    add_warn,
+    reset_warns,
+    mute_user,
+    ban_user
+)
 
 bot.infinity_polling()
