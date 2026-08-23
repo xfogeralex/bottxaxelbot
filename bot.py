@@ -3,7 +3,7 @@ from telebot import types
 import re
 import time
 
-TOKEN = "TU_WSTAW_TOKEN"
+TOKEN = "TU_WSTAW_TOKEN"  # <-- tutaj wstaw swój prawdziwy token
 LOG_CHANNEL_ID = -1004410834577  # kanał logów adminów
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
@@ -132,7 +132,6 @@ def on_new_member(message):
     for user in message.new_chat_members:
         user_id = user.id
 
-        # zablokuj wysyłanie wiadomości do czasu rozwiązania CAPTCHA
         try:
             bot.restrict_chat_member(
                 chat_id,
@@ -154,7 +153,7 @@ def on_new_member(message):
         bot.send_message(
             chat_id,
             f"👋 Witaj, <b>{user.first_name}</b>!\n\n"
-            f"Aby pisać na tej grupie, kliknij przycisk {CAPTCHA_EMOJI} poniżej w ciągu 60 sekund.",
+            f"Aby pisać na tej grupie, kliknij przycisk {CAPTCHA_EMOJI} poniżej.",
             reply_markup=kb
         )
 
@@ -162,10 +161,8 @@ def on_new_member(message):
 def captcha_ok(callback_query):
     chat_id = callback_query.message.chat.id
     from_id = callback_query.from_user.id
-
     data_user_id = int(callback_query.data.split(":")[1])
 
-    # tylko jeśli użytkownik rozwiązuje swoją CAPTCHA
     if from_id != data_user_id:
         bot.answer_callback_query(callback_query.id, "To nie jest Twoja CAPTCHA.")
         return
@@ -198,7 +195,6 @@ def moderation(message):
     user_id = message.from_user.id
     text = message.text or ""
 
-    # jeśli użytkownik ma pending CAPTCHA → usuń wiadomość
     if chat_id in pending_captcha and pending_captcha[chat_id].get(user_id):
         try:
             bot.delete_message(chat_id, message.message_id)
@@ -208,7 +204,6 @@ def moderation(message):
         log_event(f"⚠️ CAPTCHA BLOCK: user_id={user_id}, chat_id={chat_id}")
         return
 
-    # blokowanie linków
     if contains_link(text):
         try:
             bot.delete_message(chat_id, message.message_id)
@@ -219,7 +214,6 @@ def moderation(message):
         log_event(f"🔗 LINK BLOCK: user_id={user_id}, chat_id={chat_id}, text={text}")
         return
 
-    # blokowanie mediów (zdjęcia/filmy/dokumenty itd.)
     if is_media(message):
         try:
             bot.delete_message(chat_id, message.message_id)
@@ -230,7 +224,6 @@ def moderation(message):
         log_event(f"🖼️ MEDIA BLOCK: user_id={user_id}, chat_id={chat_id}")
         return
 
-    # przekleństwa
     if contains_bad_word(text):
         try:
             bot.delete_message(chat_id, message.message_id)
@@ -239,13 +232,11 @@ def moderation(message):
 
         warns = add_warn(chat_id, user_id)
 
-        # ciężkie przekleństwo → ban
         if contains_heavy_bad_word(text):
             ban_user(chat_id, user_id, "Ciężkie przekleństwo")
             bot.send_message(chat_id, f"⛔ {message.from_user.first_name} został zbanowany za ciężkie przekleństwa.")
             return
 
-        # 3 warny → mute 10 min, potem 1h, potem 24h
         if warns == 1:
             bot.send_message(chat_id, f"⚠️ {message.from_user.first_name}, ostrzeżenie (1/3).")
             log_event(f"⚠️ WARN 1: user_id={user_id}, chat_id={chat_id}, text={text}")
@@ -253,7 +244,6 @@ def moderation(message):
             bot.send_message(chat_id, f"⚠️ {message.from_user.first_name}, ostrzeżenie (2/3).")
             log_event(f"⚠️ WARN 2: user_id={user_id}, chat_id={chat_id}, text={text}")
         elif warns >= 3:
-            # mute 10 min, potem 1h, potem 24h (prosto: rosnąco)
             if warns == 3:
                 mute_user(chat_id, user_id, MUTE_10_MIN, "3 warny → mute 10 min")
                 bot.send_message(chat_id, f"🔇 {message.from_user.first_name} został wyciszony na 10 minut (3 warny).")
@@ -275,7 +265,7 @@ def start(message):
         "- warny, mute, ban\n"
         "- blokada linków i mediów\n"
         "- CAPTCHA emoji dla nowych użytkowników\n"
-       "- logi do kanału adminów."
+        "- logi do kanału adminów."
     )
 
 bot.infinity_polling()
