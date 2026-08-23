@@ -1,6 +1,12 @@
 from telebot import types
 
-# ====== ADMIN PANEL (OSOBNY PLIK) ======
+# ====== SUPER PRO ADMIN PANEL ======
+
+# lokalna historia moderacji
+moderation_history = {}  # {chat_id: [("admin", "target", "action")]}
+
+# ustawienia grupy
+group_settings = {}  # {chat_id: {"links": True, "media": True, "captcha": True, "antispam": True}}
 
 def is_admin(bot, chat_id, user_id):
     try:
@@ -12,6 +18,7 @@ def is_admin(bot, chat_id, user_id):
 
 def register_admin_panel(bot, LOG_CHANNEL_ID, add_warn, reset_warns, mute_user, ban_user):
 
+    # ====== PANEL KOMENDY ======
     @bot.message_handler(commands=['panel'])
     def admin_panel(message):
         chat_id = message.chat.id
@@ -22,20 +29,26 @@ def register_admin_panel(bot, LOG_CHANNEL_ID, add_warn, reset_warns, mute_user, 
             return
 
         kb = types.InlineKeyboardMarkup()
+
         kb.add(
             types.InlineKeyboardButton("⚠️ Warn", callback_data="admin_warn"),
             types.InlineKeyboardButton("♻️ Unwarn", callback_data="admin_unwarn")
         )
         kb.add(
-            types.InlineKeyboardButton("🔇 Mute", callback_data="admin_mute"),
+            types.InlineKeyboardButton("🔇 Mute", callback_data="admin_mute_menu"),
             types.InlineKeyboardButton("⛔ Ban", callback_data="admin_ban")
         )
         kb.add(
-            types.InlineKeyboardButton("📜 Logi", callback_data="admin_logs")
+            types.InlineKeyboardButton("📊 Warny", callback_data="admin_warns"),
+            types.InlineKeyboardButton("📜 Historia", callback_data="admin_history")
+        )
+        kb.add(
+            types.InlineKeyboardButton("⚙️ Ustawienia", callback_data="admin_settings")
         )
 
-        bot.reply_to(message, "🔧 <b>Admin Panel</b>\nWybierz akcję:", reply_markup=kb)
+        bot.reply_to(message, "🔧 <b>Admin Panel — SUPER PRO</b>\nWybierz akcję:", reply_markup=kb)
 
+    # ====== CALLBACKI ======
     @bot.callback_query_handler(func=lambda c: c.data.startswith("admin_"))
     def admin_actions(callback):
         chat_id = callback.message.chat.id
@@ -47,37 +60,163 @@ def register_admin_panel(bot, LOG_CHANNEL_ID, add_warn, reset_warns, mute_user, 
 
         action = callback.data.split("_")[1]
 
-        if not callback.message.reply_to_message:
-            bot.answer_callback_query(callback.id, "⚠️ Panel działa tylko na odpowiedź na wiadomość.")
+        # ====== USTAWIENIA ======
+        if action == "settings":
+            kb = types.InlineKeyboardMarkup()
+
+            settings = group_settings.setdefault(chat_id, {
+                "links": True,
+                "media": True,
+                "captcha": True,
+                "antispam": True
+            })
+
+            kb.add(
+                types.InlineKeyboardButton(f"🔗 Linki: {'ON' if settings['links'] else 'OFF'}",
+                                           callback_data="toggle_links"),
+                types.InlineKeyboardButton(f"🖼️ Media: {'ON' if settings['media'] else 'OFF'}",
+                                           callback_data="toggle_media")
+            )
+            kb.add(
+                types.InlineKeyboardButton(f"🚀 Captcha: {'ON' if settings['captcha'] else 'OFF'}",
+                                           callback_data="toggle_captcha"),
+                types.InlineKeyboardButton(f"🛡️ Antyspam: {'ON' if settings['antispam'] else 'OFF'}",
+                                           callback_data="toggle_antispam")
+            )
+
+            bot.edit_message_text(
+                "⚙️ <b>Ustawienia grupy</b>\nKliknij, aby przełączyć:",
+                chat_id,
+                callback.message.message_id,
+                reply_markup=kb
+            )
             return
 
-        target = callback.message.reply_to_message.from_user.id
+        # ====== TOGGLE ======
+        if action in ["links", "media", "captcha", "antispam"]:
+            settings = group_settings.setdefault(chat_id, {
+                "links": True,
+                "media": True,
+                "captcha": True,
+                "antispam": True
+            })
 
-        # WARN
+            settings[action] = not settings[action]
+
+            bot.answer_callback_query(callback.id, "Zmieniono ustawienie.")
+            bot.send_message(chat_id, f"⚙️ {action.upper()} ustawione na: {settings[action]}")
+            return
+
+        # ====== HISTORIA ======
+        if action == "history":
+            history = moderation_history.get(chat_id, [])
+            if not history:
+                bot.answer_callback_query(callback.id, "Brak historii.")
+                bot.send_message(chat_id, "📜 Brak historii moderacji.")
+                return
+
+            text = "📜 <b>Historia moderacji:</b>\n\n"
+            for admin, target, act in history[-10:]:
+                text += f"👮 {admin} → 👤 {target}: {act}\n"
+
+            bot.send_message(chat_id, text)
+            bot.answer_callback_query(callback.id, "Historia wyświetlona.")
+            return
+
+        # ====== WARNY ======
+        if action == "warns":
+            if not callback.message.reply_to_message:
+                bot.answer_callback_query(callback.id, "⚠️ Odpowiedz na wiadomość użytkownika.")
+                return
+
+            target = callback.message.reply_to_message.from_user
+            warns = add_warn(chat_id, target.id) - 1  # nie dodajemy nowego
+
+            bot.send_message(chat_id, f"📊 Użytkownik <b>{target.first_name}</b> ma {warns}/3 warnów.")
+            bot.answer_callback_query(callback.id, "Wyświetlono warny.")
+            return
+
+        # ====== MUTE MENU ======
+        if action == "mute":
+            kb = types.InlineKeyboardMarkup()
+            kb.add(
+                types.InlineKeyboardButton("🔇 10 min", callback_data="mute_10"),
+                types.InlineKeyboardButton("🔇 1 godz", callback_data="mute_60")
+            )
+            kb.add(
+                types.InlineKeyboardButton("🔇 24 godz", callback_data="mute_1440")
+            )
+
+            bot.edit_message_text(
+                "🔇 <b>Wybierz czas wyciszenia:</b>",
+                chat_id,
+                callback.message.message_id,
+                reply_markup=kb
+            )
+            return
+
+        # ====== MUTE CZASY ======
+        if action in ["10", "60", "1440"]:
+            if not callback.message.reply_to_message:
+                bot.answer_callback_query(callback.id, "⚠️ Odpowiedz na wiadomość użytkownika.")
+                return
+
+            target = callback.message.reply_to_message.from_user
+            minutes = int(action)
+            seconds = minutes * 60
+
+            mute_user(chat_id, target.id, seconds, f"Admin mute {minutes}m")
+            bot.send_message(chat_id, f"🔇 Użytkownik wyciszony na {minutes} minut.")
+            moderation_history.setdefault(chat_id, []).append(
+                (admin_id, target.id, f"MUTE {minutes}m")
+            )
+            bot.answer_callback_query(callback.id, "Wyciszono.")
+            return
+
+        # ====== WARN ======
         if action == "warn":
-            warns = add_warn(chat_id, target)
-            bot.send_message(chat_id, f"⚠️ Warn dodany. Użytkownik ma {warns}/3.")
+            if not callback.message.reply_to_message:
+                bot.answer_callback_query(callback.id, "⚠️ Odpowiedz na wiadomość.")
+                return
+
+            target = callback.message.reply_to_message.from_user
+            warns = add_warn(chat_id, target.id)
+
+            bot.send_message(chat_id, f"⚠️ Warn dodany. {warns}/3.")
+            moderation_history.setdefault(chat_id, []).append(
+                (admin_id, target.id, "WARN")
+            )
             bot.answer_callback_query(callback.id, "Warn dodany.")
+            return
 
-        # UNWARN
-        elif action == "unwarn":
-            reset_warns(chat_id, target)
+        # ====== UNWARN ======
+        if action == "unwarn":
+            if not callback.message.reply_to_message:
+                bot.answer_callback_query(callback.id, "⚠️ Odpowiedz na wiadomość.")
+                return
+
+            target = callback.message.reply_to_message.from_user
+            reset_warns(chat_id, target.id)
+
             bot.send_message(chat_id, "♻️ Warny wyzerowane.")
-            bot.answer_callback_query(callback.id, "Warny wyzerowane.")
+            moderation_history.setdefault(chat_id, []).append(
+                (admin_id, target.id, "UNWARN")
+            )
+            bot.answer_callback_query(callback.id, "Wyzerowano.")
+            return
 
-        # MUTE
-        elif action == "mute":
-            mute_user(chat_id, target, 600, "Admin mute 10m")
-            bot.send_message(chat_id, "🔇 Użytkownik wyciszony na 10 minut.")
-            bot.answer_callback_query(callback.id, "Mute 10m.")
+        # ====== BAN ======
+        if action == "ban":
+            if not callback.message.reply_to_message:
+                bot.answer_callback_query(callback.id, "⚠️ Odpowiedz na wiadomość.")
+                return
 
-        # BAN
-        elif action == "ban":
-            ban_user(chat_id, target, "Admin ban")
+            target = callback.message.reply_to_message.from_user
+            ban_user(chat_id, target.id, "Admin ban")
+
             bot.send_message(chat_id, "⛔ Użytkownik zbanowany.")
+            moderation_history.setdefault(chat_id, []).append(
+                (admin_id, target.id, "BAN")
+            )
             bot.answer_callback_query(callback.id, "Ban wykonany.")
-
-        # LOGI
-        elif action == "logs":
-            bot.send_message(chat_id, f"📜 Logi są wysyłane do kanału:\n<code>{LOG_CHANNEL_ID}</code>")
-            bot.answer_callback_query(callback.id, "Logi wysłane.")
+            return
