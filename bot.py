@@ -3,7 +3,7 @@ from telebot import types
 import re
 import time
 
-TOKEN = "TU_WSTAW_TOKEN"  # <-- tutaj wstaw swój prawdziwy token
+TOKEN = "8942399382:AAH8s0mcxBRk26IHGzc7mepheWkw3szrOEs"  # <-- tutaj wstaw swój prawdziwy token
 LOG_CHANNEL_ID = -1004410834577  # kanał logów adminów
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
